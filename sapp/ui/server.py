@@ -4,13 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import hmac
 import logging
 import os
 from threading import get_ident
 from typing import Optional
 
 import sqlalchemy
-from flask import Flask, send_from_directory
+from flask import Flask, request, send_from_directory
 from flask.wrappers import Response
 from flask_cors import CORS
 from flask_graphql import GraphQLView
@@ -33,6 +34,50 @@ application = Flask(
 )
 
 session: Optional[Session] = None
+
+# Host names accepted in the Host header when the server is bound to a
+# loopback address; anything else is rejected to blunt DNS-rebinding attacks
+# (a malicious web page rebinding its origin to localhost:13337).
+LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
+
+
+def bind_host() -> str:
+    """Address the server listens on. SAPP_SERVER_HOST overrides the default
+    localhost bind for hosted deployments (put auth in front when you do:
+    set SAPP_AUTH_TOKEN)."""
+    return os.environ.get("SAPP_SERVER_HOST") or "localhost"
+
+
+def _is_loopback(host: str) -> bool:
+    return host in ("localhost", "127.0.0.1", "::1")
+
+
+@application.before_request
+def _enforce_auth_and_host() -> Optional[Response]:
+    # Optional bearer auth: when SAPP_AUTH_TOKEN is set, every request must
+    # carry it. Comparison is constant-time. Unset means open (previous
+    # behavior, fine for a localhost-only tool).
+    token = os.environ.get("SAPP_AUTH_TOKEN")
+    if token:
+        authorization = request.headers.get("Authorization", "")
+        if not hmac.compare_digest(authorization, "Bearer " + token):
+            return Response("Unauthorized", status=401)
+    if _is_loopback(bind_host()):
+        host = request.host
+        if host.startswith("["):  # IPv6 literal, e.g. [::1]:13337
+            host = host[1 : host.index("]")]
+        else:
+            host = host.split(":")[0]
+        if host.lower() not in LOCAL_HOSTNAMES:
+            LOG.warning(f"Rejected request with non-local Host header: {request.host}")
+            return Response("Bad Host header", status=403)
+    return None
+
+
+@application.after_request
+def _security_headers(response: Response) -> Response:
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @application.teardown_request
@@ -108,4 +153,9 @@ def start_server(
                 }
             },
         )
-    application.run(debug=debug, host="localhost", port=default_backend_port)
+    host = bind_host()
+    LOG.info(
+        f"SAPP UI on http://{host}:{default_backend_port} "
+        f"(auth: {'token' if os.environ.get('SAPP_AUTH_TOKEN') else 'off'})"
+    )
+    application.run(debug=debug, host=host, port=default_backend_port)

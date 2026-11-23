@@ -29,8 +29,8 @@ fi
 cd "$(dirname "$0")/.." || exit 1
 if [ "$1" == "--with-coverage" ]; then
   echo '  Running frontend tests with coverage results:'
-  (cd sapp/ui/frontend && npm install && npm run ui-test)
+  (cd sapp/ui/frontend && npm ci && npm run ui-test)
 else
   echo '  Running frontend tests:'
-  (cd sapp/ui/frontend && npm install && npm run ui-test -- --coverage=false)
+  (cd sapp/ui/frontend && npm ci && npm run ui-test -- --coverage=false)
 fi

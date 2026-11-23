@@ -10,6 +10,11 @@
 set -e
 set -x
 
+if [ "${PUBLISH_TO_PYPI:-}" != "yes" ]; then
+  echo "Refusing to publish: set PUBLISH_TO_PYPI=yes to allow twine upload (this fork is internal)." >&2
+  exit 1
+fi
+
 cd "$(dirname "$0")/.." || exit 1
 
 (cd sapp/ui/frontend && npm install && npm run build)

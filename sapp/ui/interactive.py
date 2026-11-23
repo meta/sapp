@@ -12,6 +12,7 @@ import itertools
 import os
 import sys
 from collections import defaultdict
+from pathlib import Path
 from collections.abc import Callable
 from typing import (
     Any,
@@ -1117,6 +1118,17 @@ json CALLABLE        show the original json output for the matching callable
         filename = os.path.join(
             self.repository_directory, current_trace_frame.filename or "<undefined>"
         )
+        # The filename comes from the analyzed report (via the database), so
+        # it can be absolute or contain '..': only open files inside the
+        # repository directory.
+        repository_root = Path(self.repository_directory).resolve()
+        try:
+            Path(filename).resolve().relative_to(repository_root)
+        except ValueError:
+            self.warning(
+                f"Refusing to open {filename}: outside the repository directory"
+            )
+            return
         file_lines: List[str] = []
 
         try:

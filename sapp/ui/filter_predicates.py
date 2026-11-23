@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import re
+import signal
+import threading
 from abc import ABC, abstractmethod
-from typing import Generic, List, Optional, Pattern, Sequence, Set, TypeVar, Union
+from typing import Any, Generic, List, Optional, Pattern, Sequence, Set, TypeVar, Union
 
 from sqlalchemy import Column
 from sqlalchemy.orm.query import Query
@@ -99,7 +101,19 @@ class HasAll(IssuePredicate):
 
 
 class Matches(IssuePredicate):
+    # Mitigations for CWE-1333 (ReDoS): the pattern comes from the GraphQL
+    # `matches` filter fields, which are unauthenticated, and Python's `re`
+    # has no timeout. Cap the pattern length, and bound the total time spent
+    # matching in apply() with SIGALRM when we run on the main thread.
+    MAX_REGEX_LENGTH = 512
+    APPLY_TIMEOUT_SECONDS = 1.0
+
     def __init__(self, regex: str, parameter_name: str) -> None:
+        if len(regex) > self.MAX_REGEX_LENGTH:
+            raise ValueError(
+                f"regex for {parameter_name} exceeds the {self.MAX_REGEX_LENGTH} "
+                "character limit"
+            )
         self._regex: Pattern[str] = re.compile(regex)
         self._parameter_name = parameter_name
 
@@ -109,12 +123,28 @@ class Matches(IssuePredicate):
             return {attribute}
         return set(attribute)
 
-    def apply(self, issues: List[IssueQueryResult]) -> List[IssueQueryResult]:
+    def _on_timeout(self, signum: int, frame: Any) -> None:
+        raise TimeoutError("regex match timed out")
+
+    def _apply(self, issues: List[IssueQueryResult]) -> List[IssueQueryResult]:
         return [
             issue
             for issue in issues
             if any(map(self._regex.match, self.attribute_set(issue)))
         ]
+
+    def apply(self, issues: List[IssueQueryResult]) -> List[IssueQueryResult]:
+        if hasattr(signal, "setitimer") and (
+            threading.current_thread() is threading.main_thread()
+        ):
+            previous_handler = signal.signal(signal.SIGALRM, self._on_timeout)
+            signal.setitimer(signal.ITIMER_REAL, self.APPLY_TIMEOUT_SECONDS)
+            try:
+                return self._apply(issues)
+            finally:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+                signal.signal(signal.SIGALRM, previous_handler)
+        return self._apply(issues)
 
 
 class HasAny(IssuePredicate):

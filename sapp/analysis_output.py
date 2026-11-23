@@ -282,6 +282,16 @@ class AnalysisOutput:
                     "Use either 'filename_spec' or specify something in "
                     "'filename_glob'."
                 )
+            # The bundle's metadata.json is produced by the analysis job,
+            # possibly on another host: keep the glob inside the bundle.
+            if os.path.isabs(filename_glob) or any(
+                part == ".."
+                for part in filename_glob.replace("\\", "/").split("/")
+            ):
+                raise AnalysisOutputError(
+                    f"'filename_glob' must be relative to the bundle directory "
+                    f"and may not contain '..' segments: {filename_glob!r}"
+                )
         else:
             # Legacy
             filename_specs = [
@@ -360,9 +370,15 @@ class AnalysisOutput:
         if filename_glob is not None:
             directory = self.directory
             assert directory is not None
+            root = Path(directory).resolve()
             # str() cast to convert the returned Path to string for a
             # consistent return type.
             for path in Path(directory).glob(filename_glob):
+                try:
+                    path.resolve().relative_to(root)
+                except ValueError:
+                    # glob pattern escaped the bundle directory
+                    continue
                 yield str(path)
 
     @classmethod

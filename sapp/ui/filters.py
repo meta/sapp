@@ -12,6 +12,7 @@ from typing import List, Optional, Tuple
 
 import graphene  # @manual=fbsource//third-party/pypi/graphene-legacy:graphene-legacy
 import sqlalchemy
+from flask import Response
 from flask.views import View
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -178,7 +179,7 @@ class ServeExportFilter(View):
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def dispatch_request(self, **kwargs: str) -> str:
+    def dispatch_request(self, **kwargs: str) -> Response:
         filter_name = kwargs["filter_name"]
         try:
             record = (
@@ -191,7 +192,13 @@ class ServeExportFilter(View):
             if not record:
                 raise FilterNotFound(f"`{filter_name}` does not exist")
             storedfilter_instance = StoredFilter.from_record(record)
-            return storedfilter_instance.to_file()
+            # Serve as JSON, not text/html: the stored filter fields are
+            # user-controlled and json.dumps does not escape <, >, &.
+            return Response(
+                storedfilter_instance.to_file(),
+                mimetype="application/json",
+                headers={"X-Content-Type-Options": "nosniff"},
+            )
         except sqlalchemy.exc.OperationalError:
             LOG.error(
                 "Error: Database disk image is malformed or "

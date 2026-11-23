@@ -362,11 +362,19 @@ class Query(graphene.ObjectType):
         return typeahead.all_features(session)
 
     def resolve_file(self, info: ResolveInfo, path: str, **kwargs: Any) -> List[File]:
-        if ".." in path:
+        source_directory = Path(
+            info.context.get("source_directory") or os.getcwd()
+        ).resolve()
+        # An absolute `path` would discard source_directory entirely
+        # (pathlib semantics), and ".." segments or symlinks can escape it:
+        # resolve and require the result to stay inside the source directory.
+        full_path = (source_directory / path).resolve()
+        try:
+            full_path.relative_to(source_directory)
+        except ValueError:
             raise FileNotFoundError("Attempted directory traversal")
-
-        source_directory = Path(info.context.get("source_directory") or os.getcwd())
-        full_path = source_directory / path
+        if not full_path.is_file():
+            raise FileNotFoundError(f"No such file: {path}")
         contents = full_path.read_text()
 
         editor_link = None

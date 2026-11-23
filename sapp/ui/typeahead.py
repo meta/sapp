@@ -14,13 +14,23 @@ from sqlalchemy.orm import Session
 
 from ..models import Issue, IssueInstance, SharedText, SharedTextKind
 
+# Typeahead lists are for autocompletion; cap the rows each resolver reads so
+# one GraphQL query cannot materialize an entire table (CWE-400).
+TYPEAHEAD_LIMIT = 10_000
+
 
 class Code(graphene.ObjectType):
     code = graphene.Int()
 
 
 def all_codes(session: Session) -> List[Code]:
-    return session.execute(select(Issue.code.distinct().label("code"))).scalars().all()
+    return (
+        session.execute(
+            select(Issue.code.distinct().label("code")).limit(TYPEAHEAD_LIMIT)
+        )
+        .scalars()
+        .all()
+    )
 
 
 class Path(graphene.ObjectType):
@@ -32,6 +42,7 @@ def all_paths(session: Session) -> List[Path]:
         select(IssueInstance, SharedText.contents.label("path"))
         .join(SharedText, SharedText.id == IssueInstance.filename_id)
         .group_by(SharedText)
+        .limit(TYPEAHEAD_LIMIT)
     ).all()
 
 
@@ -44,6 +55,7 @@ def all_source_names(session: Session) -> List[SourceName]:
         select(IssueInstance, SharedText.contents.label("source_name"))
         .join(SharedText, SharedText.kind == SharedTextKind.source_detail)
         .group_by(SharedText)
+        .limit(TYPEAHEAD_LIMIT)
     ).all()
 
 
@@ -56,6 +68,7 @@ def all_source_kinds(session: Session) -> List[SourceName]:
         select(IssueInstance, SharedText.contents.label("source_kind"))
         .join(SharedText, SharedText.kind == SharedTextKind.source)
         .group_by(SharedText)
+        .limit(TYPEAHEAD_LIMIT)
     ).all()
 
 
@@ -68,6 +81,7 @@ def all_sink_names(session: Session) -> List[SourceName]:
         select(IssueInstance, SharedText.contents.label("sink_name"))
         .join(SharedText, SharedText.kind == SharedTextKind.sink_detail)
         .group_by(SharedText)
+        .limit(TYPEAHEAD_LIMIT)
     ).all()
 
 
@@ -80,6 +94,7 @@ def all_sink_kinds(session: Session) -> List[SourceName]:
         select(IssueInstance, SharedText.contents.label("sink_kind"))
         .join(SharedText, SharedText.kind == SharedTextKind.sink)
         .group_by(SharedText)
+        .limit(TYPEAHEAD_LIMIT)
     ).all()
 
 
@@ -89,7 +104,11 @@ class Status(graphene.ObjectType):
 
 def all_statuses(session: Session) -> List[Status]:
     return (
-        session.execute(select(Issue.status.distinct().label("status"))).scalars().all()
+        session.execute(
+            select(Issue.status.distinct().label("status")).limit(TYPEAHEAD_LIMIT)
+        )
+        .scalars()
+        .all()
     )
 
 
@@ -102,6 +121,7 @@ def all_callables(session: Session) -> List[Callable]:
         select(IssueInstance, SharedText.contents.label("callable"))
         .join(SharedText, SharedText.id == IssueInstance.callable_id)
         .group_by(SharedText)
+        .limit(TYPEAHEAD_LIMIT)
     ).all()
 
 
@@ -111,7 +131,7 @@ class Feature(graphene.ObjectType):
 
 def all_features(session: Session) -> List[Feature]:
     return session.execute(
-        select(SharedText, SharedText.contents.label("feature")).filter(
-            SharedText.kind == SharedTextKind.feature
-        )
+        select(SharedText, SharedText.contents.label("feature"))
+        .filter(SharedText.kind == SharedTextKind.feature)
+        .limit(TYPEAHEAD_LIMIT)
     ).all()

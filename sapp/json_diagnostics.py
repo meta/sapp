@@ -118,6 +118,12 @@ class JSONDiagnostics:
 
         parser = self.parser_class()
 
+        # The lookup table is a cache file on disk; only open paths that are
+        # part of the current analysis output.
+        allowed_paths = {
+            os.path.abspath(name) for name in self.analysis_output.file_names()
+        }
+
         entry_locations = {
             c: lookup_table.entries.get(c, []) for c in self.callables() if search in c
         }
@@ -126,6 +132,9 @@ class JSONDiagnostics:
         for callable_name, entry_location in entry_locations.items():
             for file_id, offset in entry_location:
                 path = lookup_table.file_index[file_id]
+                if os.path.abspath(path) not in allowed_paths:
+                    logger.warn(f"Skipping {path}: not part of the analysis output")
+                    continue
 
                 errors = parser.get_json_from_file_offset(path, offset)
                 if errors:

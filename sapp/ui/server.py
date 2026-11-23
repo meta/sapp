@@ -80,7 +80,7 @@ def start_server(
         view_func=GraphQLView.as_view(
             "graphql",
             schema=schema,
-            graphiql=True,
+            graphiql=debug,
             get_context=lambda: {
                 "session": session,
                 "source_directory": os.path.expanduser(source_directory),
@@ -93,6 +93,12 @@ def start_server(
         view_func=ServeExportFilter.as_view("filter_export_view", session=session),
     )
     default_backend_port = int(os.environ.get("SAPP_SERVER_PORT") or 13337)
+    bind = os.environ.get("SAPP_SERVER_HOST") or "localhost"
+    if debug and bind not in ("localhost", "127.0.0.1", "::1"):
+        raise ValueError(
+            "--debug enables the Werkzeug interactive debugger and is only "
+            f"allowed on a loopback bind, refusing to start on {bind!r}"
+        )
     if static_resources:
         application.static_folder = static_resources
     if debug:

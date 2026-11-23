@@ -29,6 +29,7 @@ jobs:
           python -m pip install cython
           python -m pip install graphql-core typing_inspect
 
-      - uses: facebook/pyrefly@main
+      # pinned to tag 1.5.0 (immutable commit SHA)
+      - uses: meta/pyrefly@cc13b5dd74cd36ae3d7a9ee198de8ef81806e4be
         with:
           python-version: ${{ matrix.python-version }}
